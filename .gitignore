@@ -150,3 +150,32 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+*.png
+*.mp4
+*.jpg
+data/data.yaml
+data/README.dataset.txt
+data/README.roboflow.txt
+data/test/labels/images00021_png.rf.5336bd87cb76f29da427a8935f140b24.txt
+data/train/labels.cache
+data/train/labels/images00001_png.rf.1bef3fa2518b30886f4fcf834c491e88.txt
+data/train/labels/images00011_png.rf.52d0eae3951100a375a449b27f70f352.txt
+data/train/labels/images00031_png.rf.1bc78d6a3c54f32c02c30db0dc759bd6.txt
+data/train/labels/images00041_png.rf.148c1677ff153d34a95ef854eb5027f0.txt
+data/train/labels/images00051_png.rf.9fe3af470de24dff44e7afa6beca7ef5.txt
+data/valid/labels.cache
+data/valid/labels/images00061_png.rf.f06a7f9aad3d966e2b2531da5b7351e9.txt
+runs/detect/train/args.yaml
+runs/detect/train10/args.yaml
+runs/detect/train11/args.yaml
+runs/detect/train11/results.csv
+runs/detect/train11/weights/best.pt
+runs/detect/train11/weights/last.pt
+runs/detect/train2/args.yaml
+runs/detect/train3/args.yaml
+runs/detect/train4/args.yaml
+runs/detect/train5/args.yaml
+runs/detect/train6/args.yaml
+runs/detect/train7/args.yaml
+runs/detect/train8/args.yaml
+runs/detect/train9/args.yaml

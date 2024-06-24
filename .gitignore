@@ -179,3 +179,10 @@ runs/detect/train6/args.yaml
 runs/detect/train7/args.yaml
 runs/detect/train8/args.yaml
 runs/detect/train9/args.yaml
+runs/detect/train/results.csv
+runs/detect/train/weights/best.pt
+runs/detect/train/weights/best.torchscript
+runs/detect/train/weights/last.pt
+runs/detect/train7/results.csv
+runs/detect/train7/weights/best.pt
+runs/detect/train7/weights/last.pt

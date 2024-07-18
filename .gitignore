@@ -186,3 +186,4 @@ runs/detect/train/weights/last.pt
 runs/detect/train7/results.csv
 runs/detect/train7/weights/best.pt
 runs/detect/train7/weights/last.pt
+/runs

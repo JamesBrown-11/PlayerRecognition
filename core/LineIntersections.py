@@ -83,6 +83,8 @@ class LineIdentification:
 
         blurred = cv2.GaussianBlur(src=gray, ksize=(3,5), sigmaX=0.5)
 
+        cv2.imshow("blurred", blurred)
+
         edges = cv2.Canny(blurred, 70, 135)
 
         cv2.imshow("edges", edges)

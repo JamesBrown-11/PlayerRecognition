@@ -83,13 +83,16 @@ class LineIdentification:
 
         blurred = cv2.GaussianBlur(src=gray, ksize=(3,5), sigmaX=0.5)
 
-        cv2.imshow("blurred", blurred)
+        # cv2.imshow("blurred", blurred)
 
         edges = cv2.Canny(blurred, 70, 135)
 
-        cv2.imshow("edges", edges)
+        # cv2.imshow("edges", edges)
         # cv2.waitKey(0)
 
+        return edges
+
+    def draw_lines(self, frame, edges):
         # Apply HoughLinesP method to directly obtain line end points
         lines_list = []
         quadratics_list = []
@@ -133,3 +136,5 @@ class LineIdentification:
             # (0,0,255) denotes the colour of the line to be
             # drawn. In this case, it is red.
             cv2.line(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+
+            return frame

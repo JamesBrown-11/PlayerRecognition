@@ -4,8 +4,7 @@ from PIL import Image
 
 import cv2
 import numpy as np
-import time
-import subprocess
+import statistics
 
 LINE_WIDTH = 10
 SIGMA_L = 128
@@ -76,7 +75,7 @@ class LineIdentification:
                         self.img.putpixel((x, y), (0, 0, 0))
         # self.img.show()
 
-    def edge_detection(self, frame):
+    def edge_detection(self, frame, threshold=200, minLineLength=500, maxLineGap=100):
         size = frame.shape
 
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
@@ -93,9 +92,9 @@ class LineIdentification:
             edges,  # Input edge image
             1,  # Distance resolution in pixels
             np.pi / 180,  # Angle resolution in radians
-            threshold=200,  # Min number of votes for valid line
-            minLineLength=500,  # Min allowed length of line
-            maxLineGap=100  # Max allowed gap between line for joining them
+            threshold=threshold,  # Min number of votes for valid line
+            minLineLength=minLineLength,  # Min allowed length of line
+            maxLineGap=maxLineGap  # Max allowed gap between line for joining them
         )
 
         top_threshold_y = size[0] - int(size[0] * 0.95)
@@ -107,12 +106,12 @@ class LineIdentification:
             # Extracted points nested in the list
             x1, y1, x2, y2 = points[0]
 
-            if (y1 > top_threshold_y or y2 > top_threshold_y) and (y1 < bottom_threshold_y or y2 < bottom_threshold_y):
+            # if (y1 > top_threshold_y or y2 > top_threshold_y) and (y1 < bottom_threshold_y or y2 < bottom_threshold_y):
                 # Draw the lines joining the points
 
                 # Maintain a simples lookup list for points
-                lines_list.append([(x1, y1), (x2, y2)])
-                count += 1
+            lines_list.append([(x1, y1), (x2, y2)])
+            count += 1
 
         self.merge_line(lines_list, quadratics_list)
         self.draw_line(lines_list, frame)
@@ -124,6 +123,7 @@ class LineIdentification:
         # print("Done")
 
     def merge_line(self, line_list, quadratics_list):
+        merged_lines = []
         i = 0
         while i < len(line_list):
             line = line_list[i]
@@ -136,6 +136,7 @@ class LineIdentification:
                 slope = 0.0
             y_intercept = A.y - slope * A.x
 
+            intersecting_lines = []
             j = 0
             while j < len(line_list)-1:
                 if j != i:
@@ -161,27 +162,64 @@ class LineIdentification:
 
                     # Else if the lines aren't parallel
                     # Check if they intersect
-                    # else:
-                    #
-                    #     bh = self.both_horizontal(slope, other_slope)
-                    #     bv = self.both_vertical(slope, other_slope)
-                    #     does_intersect_on_segments = self.lineLineIntersection(A, B, C, D)
-                    #     if bv or bh:
-                    #         if does_intersect_on_segments and slope_diff < 1.0:
-                    #             del line_list[j]
-                    #             j -= 1
-                    #         else:
-                    #         # The lines intersect
-                    #         # Check if this is a vertical or horizontal line
-                    #         # Check if a given point is close for each line
-                    #             closest_distance = self.find_closest_distance(A, B, slope, y_intercept, other_slope,
-                    #                                                           other_y_intercept)
-                    #             if closest_distance < 200:
-                    #                 del line_list[j]
-                    #                 j -= 1
+                    else:
+
+                        bh = self.both_horizontal(slope, other_slope)
+                        bv = self.both_vertical(slope, other_slope)
+                        does_intersect_on_segments = self.lineLineIntersection(A, B, C, D)
+                        if bv or bh:
+                            # If the two lines intersect on the segment visible in the frame
+                            # Add the second line to a list of intersecting lines so that the middle line can be established
+                            # Delete the second line from the line_list
+                            if does_intersect_on_segments and slope_diff < 1.0:
+                                intersecting_lines.append(line_list[j])
+                                # ISSUE - When lines toward the end of the list are del
+                                del line_list[j]
+                                j -= 1
+
+                                if len(line_list) <= i:
+                                    i = len(line_list) -1
+
+
 
                 j += 1
+
+            if len(intersecting_lines) > 0:
+                intersecting_lines.append(line_list[i])
+                del line_list[i]
+                i -= 1
+
+                slopes = []
+                y_intercepts = []
+                for points in intersecting_lines:
+                    slope = self.calculate_slope(points[0], points[1])
+
+                    slopes.append(slope)
+                    y_intercepts.append(self.calculate_y_intercept(points[0], slope))
+
+                avg_slope = statistics.mean(slopes)
+                avg_y_intercept = statistics.mean(y_intercepts)
+
+                if self.horizontal(avg_slope):
+                    x1 = 0
+                    y1 = avg_y_intercept
+
+                    x2 = 640
+                    y2 = avg_slope * 640 + avg_y_intercept
+
+                    merged_lines.append([(x1, y1), (x2, y2)])
+                elif self.vertical(avg_slope):
+                    x1 = (-1 * avg_y_intercept) / avg_slope
+                    y1 = 0
+
+                    x2 = (640 - avg_y_intercept) / avg_slope
+                    y2 = 640
+
+                    merged_lines.append([(x1, y1), (x2, y2)])
+
             i += 1
+
+        lines_list = merged_lines
 
     def find_closest_distance(self, point1, point2, slope, y_intercept, other_slope, other_y_intercept):
         if point1.x < point2.x:
@@ -204,6 +242,22 @@ class LineIdentification:
 
         return closest_distance
 
+    def calculate_slope(self, point1, point2):
+        try:
+            slope = float(point2[1] - point1[1]) / float(point2[0] - point1[0])
+        except ZeroDivisionError:
+            slope = 0.0
+
+        return slope
+
+    def calculate_y_intercept(self, point1, slope):
+        return point1[1] - slope * point1[0]
+
+    def horizontal(self, slope):
+        return abs(slope) < 0.5
+
+    def vertical(self, slope):
+        return abs(slope) >= 0.5
 
     def both_horizontal(self, slope, other_slope):
         return abs(slope) < 0.5 and abs(other_slope) < 0.5

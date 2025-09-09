@@ -48,7 +48,7 @@ def annotate(file, image):
             img = cv2.imread(os.path.join(base_dir, "train", "images", image))
 
             line_identifier = LineIdentification()
-            line_identifier.edge_detection(img, threshold=150, minLineLength=25, maxLineGap=100)
+            line_identifier.edge_detection(img, threshold=150, minLineLength=50, maxLineGap=100)
 
             cv2.rectangle(img, top_left, bottom_right, (0, 255, 0), 2)
 

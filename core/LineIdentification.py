@@ -151,11 +151,12 @@ class LineIdentification:
                     if slope is None:
                         if other_slope is None:
                             # If both slopes are None, both lines are vertical
-                            # Check if the distance between them is less than 50
+                            # Check if the distance between them is less than 5
                             distance = abs(A.x - C.x)
 
-                            if distance < 50:
+                            if distance < 5:
                                 print ("Line {} and {} are both vertical and should merge".format(i, j))
+                                intersecting_lines.append(line_list[j])
                         else:
                             # The first line is vertical but the second line is not
                             # Need to determine of the lines intersect on the segment in view
@@ -175,6 +176,7 @@ class LineIdentification:
                                 # If it is, these lines should merge
                                 if abs(other_slope) >= 50:
                                     print("Line {} is vertical and line {} has a slope greater than 50, they should merge".format(i, j))
+                                    intersecting_lines.append(line_list[j])
 
                     # Horizontal line check
                     elif slope == 0:
@@ -184,6 +186,7 @@ class LineIdentification:
 
                             if distance < 50:
                                 print ("Line {} and {} are both horizontal and should merge".format(i, j))
+                                intersecting_lines.append(line_list[j])
                         else:
                             # The first line is horizontal but the second line is not
                             # Need to determine of the lines intersect on the segment in view
@@ -200,6 +203,7 @@ class LineIdentification:
                             # Check if other_x is greater than A.x or less than B.x
                             if left_x <= intersection_x <= right_x:
                                 print("Line {} is horizontal and line {} has a slope less than 1, they should merge".format(i, j))
+                                intersecting_lines.append(line_list[j])
                     # Other line vertical check
                     elif other_slope is None:
                         # The second line is vertical but the first line is not
@@ -221,6 +225,7 @@ class LineIdentification:
                             if abs(slope) >= 50:
                                 print(
                                     "Line {} has a slope greater than 50 and line {} is vertical, they should merge".format(i, j))
+                                intersecting_lines.append(line_list[j])
                     elif other_slope == 0:
                         # The first line is not horizontal but the second line is
                         # Need to determine of the lines intersect on the segment in view
@@ -238,98 +243,134 @@ class LineIdentification:
                         if left_x <= intersection_x <= right_x:
                             print(
                                 "Line {} has a slope less than 1 and line {} is horizontal, they should merge".format(i,j))
+                            intersecting_lines.append(line_list[j])
                     else:
                         # Both lines have a slope that is defined and not zero
 
                         slope_diff = abs(abs(slope) - abs(other_slope))
+
                         if slope_diff == 0.0:
                             # The lines are parallel
                             distance = abs(other_y_intercept - y_intercept)/math.sqrt(slope**2 + 1)
 
                             # Remove parallel lines that are less than 50 pixels apart
-                            # if difference < 50:
+                            if distance < 5:
+                                intersecting_lines.append(line_list[j])
                                 # del line_list[j]
                                 # j -= 1
 
                         # Else if the lines aren't parallel
+                        # Check if the slop difference is less than 0.5
                         # Check if they intersect
-                        else:
-
+                        elif slope_diff < 0.5:
                             does_intersect_on_segments = self.lineLineIntersection(A, B, C, D)
 
+                            if does_intersect_on_segments:
                                 # If the two lines intersect on the segment visible in the frame
                                 # Add the second line to a list of intersecting lines so that the middle line can be established
                                 # Delete the second line from the line_list
-                            if does_intersect_on_segments:
                                 intersection_angle = self.calculate_intersecting_angle(slope, other_slope)
                                 if intersection_angle < 10:
-                                    if not found_intersecting_line:
-                                        found_intersecting_line = True
-                                        intersecting_lines.append(line_list[i])
-                                        self.draw_line([line_list[i]], copied_frame, i)
 
                                     intersecting_lines.append(line_list[j])
-
-                                    self.draw_line([line_list[j]], copied_frame, j)
-                                    cv2.imshow("image", copied_frame)
-
-                                    cv2.waitKey(200)
 
                                     print("Line " + str(i) + " slope: " + str(slope))
                                     print("Line " + str(j) + " slope: " + str(other_slope))
                                     print("Angle of intersection: " + str(intersection_angle))
-
-                                    response = input("Continue")
-
-                                    if response == 'n':
-                                        sys.exit(0)
                                     # ISSUE - When lines toward the end of the list are del
                                     # del line_list[j]
                                     # j -= 1
 
-                                    if len(line_list) <= i:
-                                        i = len(line_list) -1
+                            else:
+                                # The lines do not intersect the segment
+                                # There are cases where lines represent the same/similar edges but are not parallel and
+                                # do not intersect on the segment
+                                # For these lines, at a given point (abitrarily the midpoint of the first line),
+                                # the distance between the two lines is less than 5
+                                midpoint_x = (A.x + B.x) / 2
+                                midpoint_y = (A.y + B.y) / 2
 
+                                other_y = other_slope * midpoint_x + other_y_intercept
 
+                                distance = math.sqrt((abs(other_y) - abs(midpoint_y)) ** 2)
+
+                                if distance < 5:
+
+                                    intersecting_lines.append(line_list[j])
+
+                                    print("Line " + str(i) + " slope: " + str(slope))
+                                    print("Line " + str(j) + " slope: " + str(other_slope))
+                                    print("Distance: " + str(distance))
 
                 j += 1
 
             if len(intersecting_lines) > 0:
+                merged_lines = []
                 intersecting_lines.append(line_list[i])
-                # del line_list[i]
-                # i -= 1
+
+                self.draw_line(intersecting_lines, copied_frame)
+                cv2.imshow("image", copied_frame)
+
+                cv2.waitKey(200)
+
+                response = input("Continue")
+
+                if response == 'n':
+                    sys.exit(0)
 
                 slopes = []
                 y_intercepts = []
+
+                is_vertical = False
                 for points in intersecting_lines:
-                    slope = self.calculate_slope(points[0], points[1])
+                    slope, y_intercept = self.calculate_slope_y_intercept(points[0], points[1])
+
+                    if slope is None and not is_vertical:
+                        is_vertical = True
 
                     slopes.append(slope)
-                    y_intercepts.append(self.calculate_y_intercept(points[0], slope))
+                    y_intercepts.append(y_intercept)
 
-                avg_slope = statistics.mean(slopes)
-                avg_y_intercept = statistics.mean(y_intercepts)
+                if is_vertical:
+                    x1  = 
+                else:
+                    avg_slope = statistics.mean(slopes)
+                    avg_y_intercept = statistics.mean(y_intercepts)
 
-                if self.horizontal(avg_slope):
-                    x1 = 0
-                    y1 = avg_y_intercept
+                    if self.horizontal(avg_slope):
 
-                    x2 = 640
-                    y2 = avg_slope * 640 + avg_y_intercept
 
-                    merged_lines.append([(x1, y1), (x2, y2)])
-                elif self.vertical(avg_slope):
-                    x1 = (-1 * avg_y_intercept) / avg_slope
-                    y1 = 0
 
-                    x2 = (640 - avg_y_intercept) / avg_slope
-                    y2 = 640
+                        x1 = 0
+                        y1 = int(avg_y_intercept)
 
-                    merged_lines.append([(x1, y1), (x2, y2)])
+                        x2 = 640
+                        y2 = int(avg_slope * 640 + avg_y_intercept)
+
+                        merged_lines.append([(x1, y1), (x2, y2)])
+                    elif self.vertical(avg_slope):
+                        x1 = int((-1 * avg_y_intercept) / avg_slope)
+                        y1 = 0
+
+                        x2 = int((640 - avg_y_intercept) / avg_slope)
+                        y2 = 640
+
+                        merged_lines.append([(x1, y1), (x2, y2)])
+
+                copied_frame = frame.copy()
+                self.draw_line(merged_lines, copied_frame)
+                cv2.imshow("image", copied_frame)
+
+                cv2.waitKey(200)
+
+                response = input("Continue")
+
+                if response == 'n':
+                    sys.exit(0)
 
             i += 1
 
-        lines_list = merged_lines
+
 
 
     def calculate_slope_y_intercept(self, A, B):

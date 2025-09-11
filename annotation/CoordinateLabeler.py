@@ -25,10 +25,10 @@ def init():
     for i in range(len(train_labels)):
         annotate(train_labels[i], train_images[i])
 
-        choice = int(input("Enter 1 to stop or 0 to continue"))
-        if choice == 1:
-            write_dataset()
-            sys.exit()
+        # choice = input("Enter 1 to stop or 0 to continue")
+        # if choice == "1":
+            # write_dataset()
+            # sys.exit()
 
 
 def annotate(file, image):
@@ -54,9 +54,9 @@ def annotate(file, image):
 
             cv2.imshow("image", img)
 
-            cv2.waitKey(200)
+            # cv2.waitKey(200)
 
-            field_location = record_field_location()
+            # field_location = record_field_location()
 
             # output_dataset.append(create_sample(image, line, field_location))
         cv2.destroyAllWindows()

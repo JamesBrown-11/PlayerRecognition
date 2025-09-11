@@ -288,11 +288,30 @@ class LineIdentification:
                         else:
                             if bottom_sideline[1] > r:
                                 bottom_sideline = (line, r)
+
+        self.extend_lines_to_edge(top_sideline, cols)
+        self.extend_lines_to_edge(bottom_sideline, cols)
+
         copied_gray = frame.copy()
         self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
         cv2.imshow("line", copied_gray)
         cv2.waitKey(0)
         print("lines")
+
+    def extend_lines_to_edge(self, line, cols):
+        temp_A = Point(line[0][0][0], line[0][0][1] * -1)
+        temp_B = Point(line[0][1][0], line[0][1][1] * -1)
+
+        if temp_A.x < temp_B.x:
+            if temp_A != 0:
+                line[0][0] = (0, line[0][0][1])
+            if temp_B != cols:
+                line[0][1] = (cols, line[0][1][1])
+        else:
+            if temp_B.x != 0:
+                line[0][1] = (0, line[0][1][1])
+            if temp_A.x != cols:
+                line[0][0] = (cols, line[0][0][1])
 
     def merge_line(self, line_list, frame):
         merged_lines = []

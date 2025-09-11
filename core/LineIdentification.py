@@ -12,6 +12,7 @@ LINE_WIDTH = 10
 SIGMA_L = 128
 SIGMA_D = 20
 
+sys.setrecursionlimit(100000)
 
 class Point:
     def __init__(self, x, y):
@@ -115,14 +116,183 @@ class LineIdentification:
             lines_list.append([(x1, y1), (x2, y2)])
             count += 1
 
+        candidate_pixels = np.zeros(gray.shape)
+
+        self.extract_side_line(frame, gray, candidate_pixels)
         self.merge_line(lines_list, frame)
+        self.calibrate_camera(gray, lines_list, candidate_pixels)
         self.draw_line(lines_list, frame)
+        cv2.imshow("image", frame)
+
+        cv2.waitKey(5)
         # cv2.imwrite(frame, image)
         # modified_image = cv2.imread('modified.png')
         # cv2.imshow('Modified Image', modified_image)
         # cv2.waitKey()
         # cv2.destroyAllWindows()
         # print("Done")
+
+    def extract_side_line(self, frame, gray, candidate_pixels):
+
+
+        rows, cols = gray.shape
+
+        for c in range(cols):
+            for r in range(rows):
+                if candidate_pixels[r, c] == 0:
+                    pixel_luminance = gray[r, c]
+
+
+                    if pixel_luminance >= 200:
+                        # This is a white pixel
+                        # Need to search surrounding pixels to determine sideline
+                        # Search should branch outward from central pixel until a non-white pixel is found
+                        # Search left
+
+                        right_pixel_count = 0
+                        for right in range(c + 1, cols):
+                            if gray[r, right] >= 200:
+                                right_pixel_count += 1
+                            else:
+                                break
+
+                        left_pixel_count = 0
+                        for left in range(c-1, -1, -1):
+                            other_luminance = gray[r, left]
+                            if gray[r, left] >= 200:
+                                left_pixel_count += 1
+                            else:
+                                break
+
+                        top_pixel_count = 0
+                        for top in range(r-1, -1, -1):
+                            if gray[top, c] >= 200:
+                                top_pixel_count += 1
+                            else:
+                                break
+
+                        bottom_pixel_count = 0
+                        for bottom in range(r + 1, rows):
+                            if gray[bottom, c] >= 200:
+                                bottom_pixel_count += 1
+                            else:
+                                break
+
+                        if max(left_pixel_count, right_pixel_count) > 50\
+                                and max(top_pixel_count, bottom_pixel_count) > 10:
+                            # Assume this is a sideline pixel
+                            # Starting from this pixel, radiate out until a non white pixel is found in a circular fashion
+                            self.color_pixels(gray, frame, candidate_pixels, r, c)
+
+        for c in range(cols):
+            for r in range(rows):
+                if candidate_pixels[r, c] == 1:
+
+                    right_pixel_count = 0
+                    for right in range(c + 1, cols):
+                        if gray[r, right] >= 200:
+                            right_pixel_count += 1
+                        else:
+                            break
+
+                    left_pixel_count = 0
+                    for left in range(c-1, -1, -1):
+                        other_luminance = gray[r, left]
+                        if gray[r, left] >= 200:
+                            left_pixel_count += 1
+                        else:
+                            break
+
+                    top_pixel_count = 0
+                    for top in range(r - 1, -1, -1):
+                        if gray[top, c] >= 200:
+                            top_pixel_count += 1
+                        else:
+                            break
+
+                    bottom_pixel_count = 0
+                    for bottom in range(r + 1, rows):
+                        if gray[bottom, c] >= 200:
+                            bottom_pixel_count += 1
+                        else:
+                            break
+
+                    if right_pixel_count < 5 and left_pixel_count < 5:
+                        candidate_pixels[r, c] = 0
+
+        for c in range(cols):
+            for r in range(rows):
+                if candidate_pixels[r, c] == 1:
+                    x = c
+                    y = r
+                    cv2.circle(frame, (x, y), 0, (0, 255, 0), 1)
+
+
+    def color_pixels(self, gray, copied_img, candidate_pixels, r, c):
+        rows, cols = gray.shape
+
+        if r < 0 or r >= rows or c < 0 or c >= cols:
+            return 0
+
+        if gray[r, c] < 200:
+            return 0
+
+        if candidate_pixels[r, c] == 1:
+            return 0
+
+        candidate_pixels[r, c] = 1
+
+
+
+        self.color_pixels(gray, copied_img, candidate_pixels, r + 1, c)
+        self.color_pixels(gray, copied_img, candidate_pixels, r + 1, c + 1)
+        self.color_pixels(gray, copied_img, candidate_pixels, r, c + 1)
+        self.color_pixels(gray, copied_img, candidate_pixels, r - 1, c + 1)
+        self.color_pixels(gray, copied_img, candidate_pixels, r - 1, c)
+        self.color_pixels(gray, copied_img, candidate_pixels, r - 1, c - 1)
+        self.color_pixels(gray, copied_img, candidate_pixels, r, c - 1)
+        self.color_pixels(gray, copied_img, candidate_pixels, r + 1, c - 1)
+
+    def calibrate_camera(self, frame, line_list, sideline_pixels):
+        rows, cols = frame.shape
+
+        midpoint_x = int(cols / 2)
+        midpoint_y = int(rows / 2)
+
+
+        # Iterate up/down to find the point at which this intersects with a horizontal line
+        top_sideline = (None, None)
+        bottom_sideline = (None, None)
+
+        for line in line_list:
+            A = Point(line[0][0], line[0][1] * -1)
+            B = Point(line[1][0], line[1][1] * -1)
+
+            slope, y_intercept = self.calculate_slope_y_intercept(A, B)
+
+            if self.horizontal(slope):
+                y = slope * midpoint_x + y_intercept
+
+                for r in reversed(range(midpoint_y)):
+                    if r * -1 == y:
+                        if top_sideline is (None, None):
+                            top_sideline = (line, r)
+                        else:
+                            if top_sideline[1] < r:
+                                top_sideline = (line, r)
+
+                for r in range(midpoint_y, rows):
+                    if r * -1 == y:
+                        if bottom_sideline is (None, None):
+                            bottom_sideline = (line, r)
+                        else:
+                            if bottom_sideline[1] > r:
+                                bottom_sideline = (line, r)
+        copied_gray = frame.copy()
+        self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
+        cv2.imshow("line", copied_gray)
+        cv2.waitKey(0)
+        print("lines")
 
     def merge_line(self, line_list, frame):
         merged_lines = []
@@ -440,14 +610,6 @@ class LineIdentification:
                 merged_lines.append(line_list[i])
 
                 i += 1
-
-        copied_frame = frame.copy()
-        self.draw_line(line_list, copied_frame)
-        cv2.imshow("image", copied_frame)
-
-        cv2.waitKey(5)
-
-
 
 
 

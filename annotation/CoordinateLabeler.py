@@ -1,3 +1,4 @@
+
 import cv2
 import os
 import sys
@@ -25,14 +26,16 @@ def init():
     for i in range(len(train_labels)):
         annotate(train_labels[i], train_images[i])
 
-        # choice = input("Enter 1 to stop or 0 to continue")
-        # if choice == "1":
-            # write_dataset()
-            # sys.exit()
+
 
 
 def annotate(file, image):
     global output_dataset
+
+    img = cv2.imread(os.path.join(base_dir, "train", "images", image))
+
+    line_identifier = LineIdentification()
+    line_identifier.edge_detection(img, threshold=150, minLineLength=50, maxLineGap=100)
 
     with open(os.path.join(base_dir, "train", "labels", file), "r") as f:
         for line in f:
@@ -45,20 +48,19 @@ def annotate(file, image):
             top_left = (int(normalized_x_center - (normalized_w/2)), int(normalized_y_center - (normalized_h/2)))
             bottom_right = (int(normalized_x_center + (normalized_w/2)), int(normalized_y_center + (normalized_h/2)))
 
-            img = cv2.imread(os.path.join(base_dir, "train", "images", image))
-
-            line_identifier = LineIdentification()
-            line_identifier.edge_detection(img, threshold=150, minLineLength=50, maxLineGap=100)
-
             cv2.rectangle(img, top_left, bottom_right, (0, 255, 0), 2)
 
-            cv2.imshow("image", img)
+            # cv2.imshow("image", img)
 
             # cv2.waitKey(200)
 
             # field_location = record_field_location()
 
             # output_dataset.append(create_sample(image, line, field_location))
+        choice = input("Enter 1 to stop or 0 to continue")
+        if choice == "1":
+            write_dataset()
+            sys.exit()
         cv2.destroyAllWindows()
 
 def record_field_location():

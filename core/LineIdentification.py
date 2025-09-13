@@ -275,7 +275,7 @@ class LineIdentification:
 
                 for r in reversed(range(midpoint_y)):
                     if r * -1 == y:
-                        if top_sideline is (None, None):
+                        if top_sideline == (None, None):
                             top_sideline = (line, r)
                         else:
                             if top_sideline[1] < r:
@@ -283,7 +283,7 @@ class LineIdentification:
 
                 for r in range(midpoint_y, rows):
                     if r * -1 == y:
-                        if bottom_sideline is (None, None):
+                        if bottom_sideline == (None, None):
                             bottom_sideline = (line, r)
                         else:
                             if bottom_sideline[1] > r:
@@ -291,6 +291,8 @@ class LineIdentification:
 
         self.extend_lines_to_edge(top_sideline, cols)
         self.extend_lines_to_edge(bottom_sideline, cols)
+
+        self.calibrate_pixels(top_sideline, bottom_sideline, sideline_pixels, frame)
 
         copied_gray = frame.copy()
         self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
@@ -312,6 +314,74 @@ class LineIdentification:
                 line[0][1] = (0, line[0][1][1])
             if temp_A.x != cols:
                 line[0][0] = (cols, line[0][0][1])
+
+
+    def calibrate_pixels(self, top_sideline, bottom_sideline, sideline_pixels, frame):
+        rows, cols = sideline_pixels.shape
+
+        # Iterate left to right across all columns
+        # for each column determine the distance from the closet sideline pixel to the top sideline
+        # If the distance is positive, that means the closest sideline pixel is above the top sideline
+        # If the distance is negative, that means the closest sideline pixel is below the top sideline
+        line = top_sideline[0]
+        A = Point(line[0][0], line[0][1] * -1)
+        B = Point(line[1][0], line[1][1] * -1)
+        slope, y_intercept = self.calculate_slope_y_intercept(A, B)
+        distance = rows
+        for c in range(cols):
+            y = abs(slope * c + y_intercept)
+
+            in_sideline = False
+            y_top_edge = None
+            y_bottom_edge = None
+            for r in range(rows):
+                if sideline_pixels[r, c] == 1:
+                    if not in_sideline:
+                        in_sideline = True
+                        y_top_edge = r
+                else:
+                    if in_sideline:
+                        # This means we were in the sideline, but are no longer. Therefore, the pixel immediately above this one
+                        # was in the sideline, therefore, represents the edge
+                        y_bottom_edge = r
+                        break
+
+            above = False
+            below = False
+
+            top_distance = cols
+            bottom_distance = cols
+
+            if y_top_edge is not None:
+                # The top edge of the sideline was not found
+                distance = y - y_top_edge
+                if distance < 0:
+                    # This implies that the line is above the top edge of the sideline pixels
+                    # Pixels should be pushed up
+                    above = True
+
+            if y_bottom_edge is not None and not above:
+                distance = y - y_bottom_edge
+
+                if distance > 0:
+                    below = True
+
+            if not above and not below:
+                # The sideline pixes surround the line
+                # Find the closest edge to the line and push pixels to align the edge with the line
+
+                if abs(top_distance) < abs(bottom_distance):
+
+                else:
+                    
+
+            print(distance)
+
+            # Once we've calculated the distance,
+            # If the sideline pixels are above the line (positive distance), pull all pixels above by the same amount
+            # copy the pixels at the very top
+            # If the sideline pixels are below the line (negative distance), push
+
 
     def merge_line(self, line_list, frame):
         merged_lines = []

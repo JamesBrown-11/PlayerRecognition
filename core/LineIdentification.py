@@ -377,6 +377,7 @@ class LineIdentification:
                         if new_location_y <= middle_y:
                             frame[new_location_y, c] = frame[pixel_y, c]
 
+
             if y_bottom_edge is not None and not above:
                 distance = y - y_bottom_edge
 
@@ -385,11 +386,16 @@ class LineIdentification:
 
                     middle_y = rows / 2
                     middle_x = cols / 2
-                    for pixel_y in range(int(middle_y)):
-                        new_location_y = int(pixel_y - round(distance * (1 - pixel_y / middle_y) * (1 - c / middle_x)))
 
-                        if new_location_y >= 0:
-                            frame[new_location_y, c] = frame[pixel_y, c]
+                    if c >= middle_x:
+                        print("There")
+
+                    for pixel_y in reversed(range(int(middle_y))):
+                        if pixel_y != y:
+                            new_location_y = int(pixel_y + round(distance * (1 - pixel_y / middle_y) * (1 - c / middle_x)))
+
+                            if new_location_y <= middle_y:
+                                frame[new_location_y, c] = frame[pixel_y, c]
 
             if not above and not below:
                 # The sideline pixes surround the line
@@ -401,6 +407,7 @@ class LineIdentification:
                 else:
                     # push pixels up to align bottom edge with line
                     print("Push pixels up")
+
 
             print(distance)
 

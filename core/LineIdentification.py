@@ -293,14 +293,13 @@ class LineIdentification:
         self.extend_lines_to_edge(bottom_sideline, cols)
         copied_gray = frame.copy()
         self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
-        cv2.imshow("line", copied_gray)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        cv2.imshow("original", copied_gray)
+
 
         copied_gray = frame.copy()
         self.calibrate_pixels(top_sideline, bottom_sideline, sideline_pixels, copied_gray)
         self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
-        cv2.imshow("line", copied_gray)
+        cv2.imshow("adjusted", copied_gray)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
@@ -323,8 +322,11 @@ class LineIdentification:
 
 
     def calibrate_pixels(self, top_sideline, bottom_sideline, sideline_pixels, frame):
-        rows, cols = sideline_pixels.shape
+        self.calibrate_top_pixels(top_sideline, sideline_pixels, frame)
+        self.calibrate_bottom_pixels(bottom_sideline, sideline_pixels, frame)
 
+    def calibrate_top_pixels(self, top_sideline, sideline_pixels, frame):
+        rows, cols = sideline_pixels.shape
         # Iterate left to right across all columns
         # for each column determine the distance from the closet sideline pixel to the top sideline
         # If the distance is positive, that means the closest sideline pixel is above the top sideline
@@ -333,24 +335,26 @@ class LineIdentification:
         A = Point(line[0][0], line[0][1] * -1)
         B = Point(line[1][0], line[1][1] * -1)
         slope, y_intercept = self.calculate_slope_y_intercept(A, B)
-        distance = rows
         for c in range(cols):
             y = abs(slope * c + y_intercept)
 
             in_sideline = False
             y_top_edge = None
             y_bottom_edge = None
-            for r in range(rows):
+            middle_y = rows / 2
+            middle_x = cols / 2
+            max_sideline_width = 100
+
+            for r in range(int(middle_y)):
                 if sideline_pixels[r, c] == 1:
                     if not in_sideline:
                         in_sideline = True
                         y_top_edge = r
-                else:
                     if in_sideline:
-                        # This means we were in the sideline, but are no longer. Therefore, the pixel immediately above this one
-                        # was in the sideline, therefore, represents the edge
-                        y_bottom_edge = r
-                        break
+                        if r > (y_top_edge + max_sideline_width):
+                            break
+                        else:
+                            y_bottom_edge = r
 
             above = False
             below = False
@@ -361,10 +365,14 @@ class LineIdentification:
             decay = 0.2
             strength = 1.0
 
+
+
+
             if y_top_edge is not None:
                 # The top edge of the sideline was not found
-                distance = y - y_top_edge
-                if distance < 0:
+                top_distance = y - y_top_edge
+                if top_distance < 0:
+                    # print("Above {}".format(c))
                     # This implies that the line is above the top edge of the sideline pixels
                     # Pixels should be pushed up
                     above = True
@@ -372,44 +380,193 @@ class LineIdentification:
                     middle_y = rows/2
                     middle_x = cols / 2
                     for pixel_y in range(int(middle_y)):
-                        new_location_y = int(pixel_y + round(distance * (1 - pixel_y/middle_y)  * (1 - c / middle_x)))
+                        new_location_y = int(pixel_y + round(top_distance * (1 - pixel_y/middle_y)  * (1 - c / middle_x)))
 
                         if new_location_y <= middle_y:
                             frame[new_location_y, c] = frame[pixel_y, c]
 
 
             if y_bottom_edge is not None and not above:
-                distance = y - y_bottom_edge
+                bottom_distance = y - y_bottom_edge
 
-                if distance > 0:
+                if bottom_distance > 0:
                     below = True
 
-                    middle_y = rows / 2
-                    middle_x = cols / 2
 
-                    if c >= middle_x:
-                        print("There")
 
-                    for pixel_y in reversed(range(int(middle_y))):
+                    for pixel_y in reversed(range(int(-1 * bottom_distance), int(middle_y))):
                         if pixel_y != y:
-                            new_location_y = int(pixel_y + round(distance * (1 - pixel_y / middle_y) * (1 - c / middle_x)))
-
-                            if new_location_y <= middle_y:
+                            if c <= middle_x:
+                                vertical_intensity = (1 - pixel_y / middle_y)
+                                horizontal_intensity = (1 - c / middle_x)
+                                new_location_y = int(pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
+                            else:
+                                # When c is greater than the middle, the intensity is increased
+                                # 640 - C gives the correct intensity from the middle to the far right
+                                # When C = 321, the equation will use 319
+                                # When C = 640, the equation will use 0
+                                inverse_c = 640 - c
+                                vertical_intensity = (1 - pixel_y / middle_y)
+                                horizontal_intensity = (1 - inverse_c / middle_x)
+                                new_location_y = int(
+                                    pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
+                            if pixel_y < 0 and new_location_y >= 0:
+                                frame[new_location_y, c] = frame[0, c]
+                            elif new_location_y <= middle_y and new_location_y != pixel_y and new_location_y != y:
                                 frame[new_location_y, c] = frame[pixel_y, c]
 
             if not above and not below:
                 # The sideline pixes surround the line
                 # Find the closest edge to the line and push pixels to align the edge with the line
 
-                if abs(top_distance) < abs(bottom_distance):
+                if top_distance == 0.0 or bottom_distance == 0.0:
+                    continue
+
+                elif abs(top_distance) < abs(bottom_distance):
                     # push pixels down to align top edge with line
-                    print("Push pixels down")
-                else:
+                    print("Push pixels down {}, {}-{}".format(c, top_distance, bottom_distance))
+                    for r in range(int(y_top_edge), int(y_bottom_edge)):
+                        frame[r, c] = 0
+
+                elif abs(top_distance) > abs(bottom_distance):
                     # push pixels up to align bottom edge with line
-                    print("Push pixels up")
+                    print("Push pixels up {}, {}-{} ".format(c, top_distance, bottom_distance))
+                    for r in range(int(y_top_edge), int(y_bottom_edge)):
+                        frame[r, c] = 0.5
 
 
-            print(distance)
+            # print(distance)
+
+            # Once we've calculated the distance,
+            # If the sideline pixels are above the line (positive distance), pull all pixels above by the same amount
+            # copy the pixels at the very top
+            # If the sideline pixels are below the line (negative distance), push
+
+    def calibrate_bottom_pixels(self, bottom_sideline, sideline_pixels, frame):
+        rows, cols = sideline_pixels.shape
+        # Iterate left to right across all columns
+        # for each column determine the distance from the closet sideline pixel to the top sideline
+        # If the distance is positive, that means the closest sideline pixel is above the top sideline
+        # If the distance is negative, that means the closest sideline pixel is below the top sideline
+        line = bottom_sideline[0]
+        A = Point(line[0][0], line[0][1] * -1)
+        B = Point(line[1][0], line[1][1] * -1)
+        slope, y_intercept = self.calculate_slope_y_intercept(A, B)
+        for c in range(cols):
+            y = abs(slope * c + y_intercept)
+
+            in_sideline = False
+            y_top_edge = None
+            y_bottom_edge = None
+            middle_y = rows / 2
+            middle_x = cols / 2
+            max_sideline_width = 100
+
+            for r in reversed(range(int(middle_y), rows)):
+                if sideline_pixels[r, c] == 1:
+                    if not in_sideline:
+                        in_sideline = True
+                        y_bottom_edge = r
+                    if in_sideline:
+                        if r < (y_bottom_edge - max_sideline_width):
+                            break
+                        else:
+                            y_top_edge = r
+
+            above = False
+            below = False
+
+            top_distance = cols
+            bottom_distance = cols
+
+            decay = 0.2
+            strength = 1.0
+
+
+
+
+            if y_top_edge is not None:
+                # The top edge of the sideline was not found
+                top_distance = y - y_top_edge
+                if top_distance < 0:
+                    print("Above {}".format(c))
+                    # This implies that the line is above the top edge of the sideline pixels
+                    # Pixels should be pushed up
+                    above = True
+
+                    for pixel_y in range(int(middle_y), int(rows + abs(top_distance))):
+                        inverse_r = rows - pixel_y
+
+                        if c <= middle_x:
+                            vertical_intensity = (1 - inverse_r / middle_y)
+                            horizontal_intensity = (1 - c / middle_x)
+                        else:
+                            # When c is greater than the middle, the intensity is increased
+                            # 640 - C gives the correct intensity from the middle to the far right
+                            # When C = 321, the equation will use 319
+                            # When C = 640, the equation will use 0
+                            inverse_c = 640 - c
+                            vertical_intensity = (1 - inverse_r / middle_y)
+                            horizontal_intensity = (1 - inverse_c / middle_x)
+
+                        new_location_y = int(pixel_y + round(top_distance * vertical_intensity * horizontal_intensity))
+
+                        if pixel_y >= rows and new_location_y < rows:
+                            frame[new_location_y, c] = frame[rows-1, c]
+                        elif int(middle_y) <= new_location_y < rows and new_location_y != pixel_y and new_location_y != y:
+                            frame[new_location_y, c] = frame[pixel_y, c]
+
+
+
+            if y_bottom_edge is not None and not above:
+                bottom_distance = y - y_bottom_edge
+
+                if bottom_distance > 0:
+                    below = True
+
+
+
+                    for pixel_y in reversed(range(int(middle_y))):
+                        if pixel_y != y:
+                            if c <= middle_x:
+                                vertical_intensity = (1 - pixel_y / middle_y)
+                                horizontal_intensity = (1 - c / middle_x)
+                                new_location_y = int(pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
+                            else:
+                                # When c is greater than the middle, the intensity is increased
+                                # 640 - C gives the correct intensity from the middle to the far right
+                                # When C = 321, the equation will use 319
+                                # When C = 640, the equation will use 0
+                                inverse_c = 640 - c
+                                vertical_intensity = (1 - pixel_y / middle_y)
+                                horizontal_intensity = (1 - inverse_c / middle_x)
+                                new_location_y = int(
+                                    pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
+
+                            if new_location_y <= middle_y and new_location_y != pixel_y and new_location_y != y:
+                                frame[new_location_y, c] = frame[pixel_y, c]
+
+            if not above and not below:
+                # The sideline pixes surround the line
+                # Find the closest edge to the line and push pixels to align the edge with the line
+
+                if top_distance == 0.0 or bottom_distance == 0.0:
+                    continue
+
+                elif abs(top_distance) < abs(bottom_distance):
+                    # push pixels down to align top edge with line
+                    print("Push pixels down {}, {}-{}".format(c, top_distance, bottom_distance))
+                    for r in range(int(y_top_edge), int(y_bottom_edge)):
+                        frame[r, c] = 0
+
+                elif abs(top_distance) > abs(bottom_distance):
+                    # push pixels up to align bottom edge with line
+                    print("Push pixels up {}, {}-{} ".format(c, top_distance, bottom_distance))
+                    for r in range(int(y_top_edge), int(y_bottom_edge)):
+                        frame[r, c] = 0.5
+
+
+            # print(distance)
 
             # Once we've calculated the distance,
             # If the sideline pixels are above the line (positive distance), pull all pixels above by the same amount

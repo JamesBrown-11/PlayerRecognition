@@ -4,7 +4,7 @@ import os
 import sys
 from core.LineIdentification import LineIdentification
 
-base_dir = os.path.join("..", "data", "field")
+base_dir = os.path.join(os.getcwd(), "data", "field")
 train_labels = []
 train_images = []
 output_dataset = []

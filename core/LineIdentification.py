@@ -291,13 +291,19 @@ class LineIdentification:
 
         self.extend_lines_to_edge(top_sideline, cols)
         self.extend_lines_to_edge(bottom_sideline, cols)
-
-        self.calibrate_pixels(top_sideline, bottom_sideline, sideline_pixels, frame)
-
         copied_gray = frame.copy()
         self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
         cv2.imshow("line", copied_gray)
         cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+        copied_gray = frame.copy()
+        self.calibrate_pixels(top_sideline, bottom_sideline, sideline_pixels, copied_gray)
+        self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
+        cv2.imshow("line", copied_gray)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
         print("lines")
 
     def extend_lines_to_edge(self, line, cols):
@@ -352,6 +358,9 @@ class LineIdentification:
             top_distance = cols
             bottom_distance = cols
 
+            decay = 0.2
+            strength = 1.0
+
             if y_top_edge is not None:
                 # The top edge of the sideline was not found
                 distance = y - y_top_edge
@@ -360,20 +369,38 @@ class LineIdentification:
                     # Pixels should be pushed up
                     above = True
 
+                    middle_y = rows/2
+                    middle_x = cols / 2
+                    for pixel_y in range(int(middle_y)):
+                        new_location_y = int(pixel_y + round(distance * (1 - pixel_y/middle_y)  * (1 - c / middle_x)))
+
+                        if new_location_y <= middle_y:
+                            frame[new_location_y, c] = frame[pixel_y, c]
+
             if y_bottom_edge is not None and not above:
                 distance = y - y_bottom_edge
 
                 if distance > 0:
                     below = True
 
+                    middle_y = rows / 2
+                    middle_x = cols / 2
+                    for pixel_y in range(int(middle_y)):
+                        new_location_y = int(pixel_y - round(distance * (1 - pixel_y / middle_y) * (1 - c / middle_x)))
+
+                        if new_location_y >= 0:
+                            frame[new_location_y, c] = frame[pixel_y, c]
+
             if not above and not below:
                 # The sideline pixes surround the line
                 # Find the closest edge to the line and push pixels to align the edge with the line
 
                 if abs(top_distance) < abs(bottom_distance):
-
+                    # push pixels down to align top edge with line
+                    print("Push pixels down")
                 else:
-                    
+                    # push pixels up to align bottom edge with line
+                    print("Push pixels up")
 
             print(distance)
 

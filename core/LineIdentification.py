@@ -14,6 +14,8 @@ SIGMA_D = 20
 
 sys.setrecursionlimit(100000)
 
+calibration_matrix = None
+
 class Point:
     def __init__(self, x, y):
         self.x = x
@@ -28,6 +30,8 @@ class LineIdentification:
     def __init__(self):
         self.img = None
         self.pixels = None
+
+
 
 
     def extract_pixels(self, img):
@@ -79,6 +83,8 @@ class LineIdentification:
         # self.img.show()
 
     def edge_detection(self, frame, threshold=200, minLineLength=500, maxLineGap=100):
+
+
         size = frame.shape
 
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
@@ -120,11 +126,9 @@ class LineIdentification:
 
         self.extract_side_line(frame, gray, candidate_pixels)
         self.merge_line(lines_list, frame)
-        self.calibrate_camera(gray, lines_list, candidate_pixels)
+        self.calibrate_camera(frame, gray, lines_list, candidate_pixels)
         self.draw_line(lines_list, frame)
-        cv2.imshow("image", frame)
 
-        cv2.waitKey(5)
         # cv2.imwrite(frame, image)
         # modified_image = cv2.imread('modified.png')
         # cv2.imshow('Modified Image', modified_image)
@@ -253,57 +257,65 @@ class LineIdentification:
         self.color_pixels(gray, copied_img, candidate_pixels, r, c - 1)
         self.color_pixels(gray, copied_img, candidate_pixels, r + 1, c - 1)
 
-    def calibrate_camera(self, frame, line_list, sideline_pixels):
-        rows, cols = frame.shape
+    def calibrate_camera(self, frame, gray, line_list, sideline_pixels):
+        global calibration_matrix
+        copied_gray = gray.copy()
 
-        midpoint_x = int(cols / 2)
-        midpoint_y = int(rows / 2)
+        cv2.imshow("original", frame)
 
+        copied_frame = frame.copy()
 
-        # Iterate up/down to find the point at which this intersects with a horizontal line
-        top_sideline = (None, None)
-        bottom_sideline = (None, None)
+        if calibration_matrix is None:
+            rows, cols = gray.shape
 
-        for line in line_list:
-            A = Point(line[0][0], line[0][1] * -1)
-            B = Point(line[1][0], line[1][1] * -1)
+            calibration_matrix = np.zeros(gray.shape)
 
-            slope, y_intercept = self.calculate_slope_y_intercept(A, B)
+            midpoint_x = int(cols / 2)
+            midpoint_y = int(rows / 2)
 
-            if self.horizontal(slope):
-                y = slope * midpoint_x + y_intercept
+            # Iterate up/down to find the point at which this intersects with a horizontal line
+            top_sideline = (None, None)
+            bottom_sideline = (None, None)
 
-                for r in reversed(range(midpoint_y)):
-                    if r * -1 == y:
-                        if top_sideline == (None, None):
-                            top_sideline = (line, r)
-                        else:
-                            if top_sideline[1] < r:
+            for line in line_list:
+                A = Point(line[0][0], line[0][1] * -1)
+                B = Point(line[1][0], line[1][1] * -1)
+
+                slope, y_intercept = self.calculate_slope_y_intercept(A, B)
+
+                if self.horizontal(slope):
+                    y = slope * midpoint_x + y_intercept
+
+                    for r in reversed(range(midpoint_y)):
+                        if r * -1 == y:
+                            if top_sideline == (None, None):
                                 top_sideline = (line, r)
+                            else:
+                                if top_sideline[1] < r:
+                                    top_sideline = (line, r)
 
-                for r in range(midpoint_y, rows):
-                    if r * -1 == y:
-                        if bottom_sideline == (None, None):
-                            bottom_sideline = (line, r)
-                        else:
-                            if bottom_sideline[1] > r:
+                    for r in range(midpoint_y, rows):
+                        if r * -1 == y:
+                            if bottom_sideline == (None, None):
                                 bottom_sideline = (line, r)
+                            else:
+                                if bottom_sideline[1] > r:
+                                    bottom_sideline = (line, r)
 
-        self.extend_lines_to_edge(top_sideline, cols)
-        self.extend_lines_to_edge(bottom_sideline, cols)
-        copied_gray = frame.copy()
-        self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
-        cv2.imshow("original", copied_gray)
+            self.extend_lines_to_edge(top_sideline, cols)
+            self.extend_lines_to_edge(bottom_sideline, cols)
 
+            self.calibrate_top_pixels(top_sideline, sideline_pixels, copied_gray)
+            self.calibrate_bottom_pixels(bottom_sideline, sideline_pixels, copied_gray)
 
-        copied_gray = frame.copy()
-        self.calibrate_pixels(top_sideline, bottom_sideline, sideline_pixels, copied_gray)
-        self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
-        cv2.imshow("adjusted", copied_gray)
+            self.draw_line([top_sideline[0], bottom_sideline[0]], copied_gray)
+
+        adjusted_frame = self.calibrate_using_matrix(frame, gray)
+
+        cv2.imshow("adjusted", adjusted_frame)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-        print("lines")
 
     def extend_lines_to_edge(self, line, cols):
         temp_A = Point(line[0][0][0], line[0][0][1] * -1)
@@ -320,12 +332,37 @@ class LineIdentification:
             if temp_A.x != cols:
                 line[0][0] = (cols, line[0][0][1])
 
+    def calibrate_using_matrix(self, frame, gray):
+        global calibration_matrix
 
-    def calibrate_pixels(self, top_sideline, bottom_sideline, sideline_pixels, frame):
-        self.calibrate_top_pixels(top_sideline, sideline_pixels, frame)
-        self.calibrate_bottom_pixels(bottom_sideline, sideline_pixels, frame)
+        rows, cols = gray.shape
 
-    def calibrate_top_pixels(self, top_sideline, sideline_pixels, frame):
+        temp_frame = frame.copy()
+
+        for c in range(cols):
+            for r in range(rows):
+                offset = int(calibration_matrix[r, c])
+
+                if r == 0:
+                    if offset > 0:
+                        for i in reversed(range(offset)):
+                            temp_frame[i, c] = frame[0, c]
+                        temp_frame[offset, c] = frame[r, c]
+                elif r == rows - 1:
+                    if offset < 0:
+                        for i in range(r + offset, rows):
+                            temp_frame[i, c] = frame[rows - 1, c]
+                        temp_frame[r + offset, c] = frame[r, c]
+                else:
+                    temp_frame[r + offset, c] = frame[r, c]
+
+        return temp_frame
+
+
+
+    def calibrate_top_pixels(self, top_sideline, sideline_pixels, gray):
+        global calibration_matrix
+
         rows, cols = sideline_pixels.shape
         # Iterate left to right across all columns
         # for each column determine the distance from the closet sideline pixel to the top sideline
@@ -383,7 +420,7 @@ class LineIdentification:
                         new_location_y = int(pixel_y + round(top_distance * (1 - pixel_y/middle_y)  * (1 - c / middle_x)))
 
                         if new_location_y <= middle_y:
-                            frame[new_location_y, c] = frame[pixel_y, c]
+                            gray[new_location_y, c] = gray[pixel_y, c]
 
 
             if y_bottom_edge is not None and not above:
@@ -399,7 +436,6 @@ class LineIdentification:
                             if c <= middle_x:
                                 vertical_intensity = (1 - pixel_y / middle_y)
                                 horizontal_intensity = (1 - c / middle_x)
-                                new_location_y = int(pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
                             else:
                                 # When c is greater than the middle, the intensity is increased
                                 # 640 - C gives the correct intensity from the middle to the far right
@@ -408,12 +444,16 @@ class LineIdentification:
                                 inverse_c = 640 - c
                                 vertical_intensity = (1 - pixel_y / middle_y)
                                 horizontal_intensity = (1 - inverse_c / middle_x)
-                                new_location_y = int(
-                                    pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
+
+                            offset = int(round(bottom_distance * vertical_intensity * horizontal_intensity))
+                            new_location_y = pixel_y + offset
+
                             if pixel_y < 0 and new_location_y >= 0:
-                                frame[new_location_y, c] = frame[0, c]
-                            elif new_location_y <= middle_y and new_location_y != pixel_y and new_location_y != y:
-                                frame[new_location_y, c] = frame[pixel_y, c]
+                                gray[new_location_y, c] = gray[0, c]
+                                # calibration_matrix[pixel_y, c] = -1 * rows
+                            elif new_location_y <= middle_y and new_location_y != pixel_y:
+                                gray[new_location_y, c] = gray[pixel_y, c]
+                                calibration_matrix[pixel_y, c] = offset
 
             if not above and not below:
                 # The sideline pixes surround the line
@@ -426,13 +466,13 @@ class LineIdentification:
                     # push pixels down to align top edge with line
                     print("Push pixels down {}, {}-{}".format(c, top_distance, bottom_distance))
                     for r in range(int(y_top_edge), int(y_bottom_edge)):
-                        frame[r, c] = 0
+                        gray[r, c] = 0
 
                 elif abs(top_distance) > abs(bottom_distance):
                     # push pixels up to align bottom edge with line
                     print("Push pixels up {}, {}-{} ".format(c, top_distance, bottom_distance))
                     for r in range(int(y_top_edge), int(y_bottom_edge)):
-                        frame[r, c] = 0.5
+                        gray[r, c] = 0.5
 
 
             # print(distance)
@@ -442,7 +482,9 @@ class LineIdentification:
             # copy the pixels at the very top
             # If the sideline pixels are below the line (negative distance), push
 
-    def calibrate_bottom_pixels(self, bottom_sideline, sideline_pixels, frame):
+    def calibrate_bottom_pixels(self, bottom_sideline, sideline_pixels, gray):
+        global calibration_matrix
+
         rows, cols = sideline_pixels.shape
         # Iterate left to right across all columns
         # for each column determine the distance from the closet sideline pixel to the top sideline
@@ -508,13 +550,16 @@ class LineIdentification:
                             inverse_c = 640 - c
                             vertical_intensity = (1 - inverse_r / middle_y)
                             horizontal_intensity = (1 - inverse_c / middle_x)
+                        offset = int(round(top_distance * vertical_intensity * horizontal_intensity))
+                        new_location_y = pixel_y + offset
 
-                        new_location_y = int(pixel_y + round(top_distance * vertical_intensity * horizontal_intensity))
 
                         if pixel_y >= rows and new_location_y < rows:
-                            frame[new_location_y, c] = frame[rows-1, c]
-                        elif int(middle_y) <= new_location_y < rows and new_location_y != pixel_y and new_location_y != y:
-                            frame[new_location_y, c] = frame[pixel_y, c]
+                            gray[new_location_y, c] = gray[rows-1, c]
+                            # calibration_matrix[pixel_y, c] = rows
+                        elif int(middle_y) <= new_location_y < rows and new_location_y != pixel_y:
+                            gray[new_location_y, c] = gray[pixel_y, c]
+                            calibration_matrix[pixel_y, c] = offset
 
 
 
@@ -526,25 +571,28 @@ class LineIdentification:
 
 
 
-                    for pixel_y in reversed(range(int(middle_y))):
-                        if pixel_y != y:
-                            if c <= middle_x:
-                                vertical_intensity = (1 - pixel_y / middle_y)
-                                horizontal_intensity = (1 - c / middle_x)
-                                new_location_y = int(pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
-                            else:
-                                # When c is greater than the middle, the intensity is increased
-                                # 640 - C gives the correct intensity from the middle to the far right
-                                # When C = 321, the equation will use 319
-                                # When C = 640, the equation will use 0
-                                inverse_c = 640 - c
-                                vertical_intensity = (1 - pixel_y / middle_y)
-                                horizontal_intensity = (1 - inverse_c / middle_x)
-                                new_location_y = int(
-                                    pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
+                    for pixel_y in range(int(middle_y), int(rows + abs(bottom_distance))):
+                        inverse_r = rows - pixel_y
+                        if c <= middle_x:
+                            vertical_intensity = (1 - inverse_r / middle_y)
+                            horizontal_intensity = (1 - c / middle_x)
+                            new_location_y = int(pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
+                        else:
+                            # When c is greater than the middle, the intensity is increased
+                            # 640 - C gives the correct intensity from the middle to the far right
+                            # When C = 321, the equation will use 319
+                            # When C = 640, the equation will use 0
+                            inverse_c = 640 - c
+                            vertical_intensity = (1 - inverse_r / middle_y)
+                            horizontal_intensity = (1 - inverse_c / middle_x)
+                            new_location_y = int(
+                                pixel_y + round(bottom_distance * vertical_intensity * horizontal_intensity))
 
-                            if new_location_y <= middle_y and new_location_y != pixel_y and new_location_y != y:
-                                frame[new_location_y, c] = frame[pixel_y, c]
+                        if pixel_y >= rows and new_location_y < rows:
+                            gray[new_location_y, c] = gray[rows - 1, c]
+                        elif int(
+                                middle_y) <= new_location_y < rows and new_location_y != pixel_y and new_location_y != y:
+                            gray[new_location_y, c] = gray[pixel_y, c]
 
             if not above and not below:
                 # The sideline pixes surround the line
@@ -557,13 +605,13 @@ class LineIdentification:
                     # push pixels down to align top edge with line
                     print("Push pixels down {}, {}-{}".format(c, top_distance, bottom_distance))
                     for r in range(int(y_top_edge), int(y_bottom_edge)):
-                        frame[r, c] = 0
+                        gray[r, c] = 0
 
                 elif abs(top_distance) > abs(bottom_distance):
                     # push pixels up to align bottom edge with line
                     print("Push pixels up {}, {}-{} ".format(c, top_distance, bottom_distance))
                     for r in range(int(y_top_edge), int(y_bottom_edge)):
-                        frame[r, c] = 0.5
+                        gray[r, c] = 0.5
 
 
             # print(distance)

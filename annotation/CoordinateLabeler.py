@@ -57,10 +57,10 @@ def annotate(file, image):
             # field_location = record_field_location()
 
             # output_dataset.append(create_sample(image, line, field_location))
-        choice = input("Enter 1 to stop or 0 to continue")
-        if choice == "1":
-            write_dataset()
-            sys.exit()
+        # choice = input("Enter 1 to stop or 0 to continue")
+        # if choice == "1":
+        #     write_dataset()
+        #     sys.exit()
         cv2.destroyAllWindows()
 
 def record_field_location():

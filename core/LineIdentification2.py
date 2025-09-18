@@ -14,7 +14,11 @@ SIGMA_D = 20
 
 sys.setrecursionlimit(100000)
 
+CALIBRATION_MATRIX = None
 
+CALIBRATION_IMAGE_COUNTER = 0
+MAX_CALIBRATION_IMAGES = 1
+CALIBRATED = False
 
 class Point:
     def __init__(self, x, y):
@@ -30,11 +34,6 @@ class LineIdentification:
     def __init__(self):
         self.img = None
         self.pixels = None
-        self.CALIBRATION_MATRIX = None
-
-        self.CALIBRATION_IMAGE_COUNTER = 0
-        self.MAX_CALIBRATION_IMAGES = 1
-        self.CALIBRATED = False
 
 
 
@@ -88,12 +87,16 @@ class LineIdentification:
         # self.img.show()
 
     def edge_detection(self, frame, threshold=200, minLineLength=500, maxLineGap=100):
+        global CALIBRATED
+        global CALIBRATION_IMAGE_COUNTER
+        global MAX_CALIBRATION_IMAGES
 
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         copied_frame = frame.copy()
-        if self.CALIBRATION_IMAGE_COUNTER < self.MAX_CALIBRATION_IMAGES:
 
-            if self.CALIBRATION_IMAGE_COUNTER != 0:
+        if CALIBRATION_IMAGE_COUNTER < MAX_CALIBRATION_IMAGES:
+            print("Initial Calibration Starting")
+            if CALIBRATION_IMAGE_COUNTER != 0:
                 # Only calibrate the images after the first one
                 copied_frame = self.calibrate_camera(copied_frame, gray, None, None)
                 gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
@@ -103,12 +106,21 @@ class LineIdentification:
             self.extract_side_line(copied_frame, gray, candidate_pixels)
             self.merge_line(lines_list, copied_frame)
             self.calibrate_camera(copied_frame, gray, lines_list, candidate_pixels)
+            print("Initial Calibration Finished")
 
+        print("Calibration Starting")
         frame = self.calibrate_camera(frame, gray, None, None)
+        print("Calibration Finished")
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        candidate_pixels = np.zeros(gray.shape)
+        print("Line Extraction Starting")
+
         lines_list = self.extract_all_lines(frame, threshold, minLineLength, maxLineGap)
+        print("Line Extraction Finished")
+
+        print("Sideline Pixel Extraction Starting")
+        candidate_pixels = np.zeros(gray.shape)
         self.extract_side_line(frame, gray, candidate_pixels)
+        print("Sideline Pixel Extraction Finished")
         # self.merge_line(lines_list, frame)
 
         # self.draw_line(lines_list, frame)
@@ -120,7 +132,7 @@ class LineIdentification:
         # cv2.imshow('Modified Image', modified_image)
         cv2.waitKey()
         cv2.destroyAllWindows()
-        print(str(self.CALIBRATION_IMAGE_COUNTER))
+        print(str(CALIBRATION_IMAGE_COUNTER))
 
     def extract_all_lines(self, frame, threshold, minLineLength, maxLineGap):
         size = frame.shape
@@ -164,8 +176,9 @@ class LineIdentification:
         return lines_list
 
     def extract_side_line(self, frame, gray, candidate_pixels):
-        rows, cols = gray.shape
 
+
+        rows, cols = gray.shape
         print("Candidate Pixel Radiate Search Starting")
         for c in range(cols):
             for r in range(rows):
@@ -187,6 +200,7 @@ class LineIdentification:
 
                         left_pixel_count = 0
                         for left in range(c-1, -1, -1):
+                            other_luminance = gray[r, left]
                             if gray[r, left] >= 200:
                                 left_pixel_count += 1
                             else:
@@ -272,13 +286,15 @@ class LineIdentification:
         self.color_pixels(gray, copied_img, candidate_pixels, r + 1, c - 1)
 
     def calibrate_camera(self, frame, gray, line_list, sideline_pixels):
+        global CALIBRATION_MATRIX
+        global CALIBRATION_IMAGE_COUNTER
+        global MAX_CALIBRATION_IMAGES
 
         if line_list is not None and sideline_pixels is not None:
 
             rows, cols = gray.shape
-            if self.CALIBRATION_MATRIX is None:
-                dtype = [('y', 'int32'), ('x', 'int32')]
-                self.CALIBRATION_MATRIX = np.zeros(gray.shape, dtype)
+            if CALIBRATION_MATRIX is None:
+                CALIBRATION_MATRIX = np.zeros(gray.shape)
 
             top_sideline, bottom_sideline = self.find_top_bottom_sideline(line_list, rows, cols)
 
@@ -291,7 +307,7 @@ class LineIdentification:
 
                 self.draw_line([top_sideline[0], bottom_sideline[0]], gray)
 
-                self.CALIBRATION_IMAGE_COUNTER += 1
+                CALIBRATION_IMAGE_COUNTER += 1
 
         return self.calibrate_using_matrix(frame, gray)
 
@@ -350,6 +366,7 @@ class LineIdentification:
                 line[0][0] = (cols, line[0][0][1])
 
     def calibrate_using_matrix(self, frame, gray):
+        global CALIBRATION_MATRIX
 
         rows, cols = gray.shape
 
@@ -357,9 +374,20 @@ class LineIdentification:
 
         for c in range(cols):
             for r in range(rows):
-                new_r, new_c = self.CALIBRATION_MATRIX[r, c]
+                offset = int(CALIBRATION_MATRIX[r, c])
 
-                temp_frame[new_r, new_c] = frame[r, c]
+                if r == 0:
+                    if offset > 0:
+                        for i in reversed(range(offset)):
+                            temp_frame[i, c] = frame[0, c]
+                        temp_frame[offset, c] = frame[r, c]
+                elif r == rows - 1:
+                    if offset < 0:
+                        for i in range(r + offset, rows):
+                            temp_frame[i, c] = frame[rows - 1, c]
+                        temp_frame[r + offset, c] = frame[r, c]
+                else:
+                    temp_frame[r + offset, c] = frame[r, c]
 
         return temp_frame
 
@@ -402,6 +430,7 @@ class LineIdentification:
 
 
     def calibrate_pixels(self, sideline, sideline_pixels, gray, start_from_top):
+        global CALIBRATION_MATRIX
 
         rows, cols = sideline_pixels.shape
         # Iterate left to right across all columns
@@ -429,12 +458,11 @@ class LineIdentification:
             if y_top_edge is None and y_bottom_edge is None and c > 0:
                 # There was no sideline pixels found for this column
                 for pixel_y in range(start, end):
-                    if self.CALIBRATION_MATRIX[pixel_y, c][0] == 0 and self.CALIBRATION_MATRIX[pixel_y, c][1] == 0:
-                        self.CALIBRATION_MATRIX[pixel_y, c] = self.CALIBRATION_MATRIX[pixel_y, c - 1]
+                    if CALIBRATION_MATRIX[pixel_y, c] == 0:
+                        CALIBRATION_MATRIX[pixel_y, c] = CALIBRATION_MATRIX[pixel_y, c - 1]
                     else:
-                        new_location_y = int(round(statistics.mean([self.CALIBRATION_MATRIX[pixel_y, c - 1][0], self.CALIBRATION_MATRIX[pixel_y, c][0]])))
-                        new_location_x = int(round(statistics.mean([self.CALIBRATION_MATRIX[pixel_y, c - 1][1], self.CALIBRATION_MATRIX[pixel_y, c][1]])))
-                        self.CALIBRATION_MATRIX[pixel_y, c] = (new_location_y, new_location_x)
+                        CALIBRATION_MATRIX[pixel_y, c] = int(
+                            round(statistics.mean([CALIBRATION_MATRIX[pixel_y, c - 1], CALIBRATION_MATRIX[pixel_y, c]])))
                 continue
 
             if y_top_edge is not None:
@@ -475,20 +503,15 @@ class LineIdentification:
                 else:
                     vertical_intensity = (rows - pixel_y) / (rows - closest_edge)
 
-                vertical_offset = int(round(distance * vertical_intensity))
-                new_location_y = pixel_y + vertical_offset
-
-                horizontal_offset = int(round(distance * horizontal_intensity))
-                new_location_x = c # + horizontal_offset
+                offset = int(round(distance * vertical_intensity * horizontal_intensity))
+                new_location_y = pixel_y + offset
 
                 if 0 <= new_location_y < rows and new_location_y != pixel_y:
                     gray[new_location_y, c] = gray[pixel_y, c]
-                    if self.CALIBRATION_MATRIX[pixel_y, c][0] == 0 and self.CALIBRATION_MATRIX[pixel_y, c][1] == 0:
-                        self.CALIBRATION_MATRIX[pixel_y, c] = (new_location_y, new_location_x)
+                    if CALIBRATION_MATRIX[pixel_y, c] == 0:
+                        CALIBRATION_MATRIX[pixel_y, c] = offset
                     else:
-                        new_location_y = int(round(statistics.mean([new_location_y, self.CALIBRATION_MATRIX[pixel_y, c][0]])))
-                        new_location_x = int(round(statistics.mean([new_location_x, self.CALIBRATION_MATRIX[pixel_y, c][1]])))
-                        self.CALIBRATION_MATRIX[pixel_y, c] = (new_location_y, new_location_x)
+                        CALIBRATION_MATRIX[pixel_y, c] = int(round(statistics.mean([CALIBRATION_MATRIX[pixel_y, c], offset])))
 
 
 

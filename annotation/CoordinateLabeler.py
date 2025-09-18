@@ -2,7 +2,7 @@
 import cv2
 import os
 import sys
-from core.LineIdentification import LineIdentification
+from core.LineIdentification2 import LineIdentification
 
 base_dir = os.path.join(os.getcwd(), "data", "field")
 train_labels = []

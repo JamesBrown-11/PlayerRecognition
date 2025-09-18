@@ -14,6 +14,14 @@ SIGMA_D = 20
 
 sys.setrecursionlimit(100000)
 
+CALIBRATION_MATRIX = None
+
+CALIBRATION_IMAGE_COUNTER = 0
+MAX_CALIBRATION_IMAGES = 5
+CALIBRATED = False
+
+MAX_SIDELINE_PIXEL_GAP = 100
+
 
 
 class Point:
@@ -30,11 +38,7 @@ class LineIdentification:
     def __init__(self):
         self.img = None
         self.pixels = None
-        self.CALIBRATION_MATRIX = None
 
-        self.CALIBRATION_IMAGE_COUNTER = 0
-        self.MAX_CALIBRATION_IMAGES = 1
-        self.CALIBRATED = False
 
 
 
@@ -88,12 +92,15 @@ class LineIdentification:
         # self.img.show()
 
     def edge_detection(self, frame, threshold=200, minLineLength=500, maxLineGap=100):
+        global CALIBRATION_IMAGE_COUNTER
+        global MAX_CALIBRATION_IMAGES
+        global CALIBRATION_MATRIX
 
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         copied_frame = frame.copy()
-        if self.CALIBRATION_IMAGE_COUNTER < self.MAX_CALIBRATION_IMAGES:
-
-            if self.CALIBRATION_IMAGE_COUNTER != 0:
+        if CALIBRATION_IMAGE_COUNTER < MAX_CALIBRATION_IMAGES:
+            print("Calibration Tuning Started")
+            if CALIBRATION_IMAGE_COUNTER != 0:
                 # Only calibrate the images after the first one
                 copied_frame = self.calibrate_camera(copied_frame, gray, None, None)
                 gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
@@ -103,12 +110,19 @@ class LineIdentification:
             self.extract_side_line(copied_frame, gray, candidate_pixels)
             self.merge_line(lines_list, copied_frame)
             self.calibrate_camera(copied_frame, gray, lines_list, candidate_pixels)
+            print("Calibration Tuning Completed")
 
+        print("Calibration Using Matrix Started")
         frame = self.calibrate_camera(frame, gray, None, None)
+        print("Calibration Using Matrix Completed")
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         candidate_pixels = np.zeros(gray.shape)
+        print("Extraction of all lines started")
         lines_list = self.extract_all_lines(frame, threshold, minLineLength, maxLineGap)
+        print("Extraction of all lines completed")
+        print("Extraction of sideline pixels started")
         self.extract_side_line(frame, gray, candidate_pixels)
+        print("Extraction of sideline pixels completed")
         # self.merge_line(lines_list, frame)
 
         # self.draw_line(lines_list, frame)
@@ -120,9 +134,9 @@ class LineIdentification:
         # cv2.imshow('Modified Image', modified_image)
         cv2.waitKey()
         cv2.destroyAllWindows()
-        print(str(self.CALIBRATION_IMAGE_COUNTER))
+        print(str(CALIBRATION_IMAGE_COUNTER))
 
-    def extract_all_lines(self, frame, threshold, minLineLength, maxLineGap):
+    def extract_all_lines(self, frame, threshold=200, minLineLength=500, maxLineGap=100):
         size = frame.shape
 
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
@@ -144,8 +158,6 @@ class LineIdentification:
             maxLineGap=maxLineGap  # Max allowed gap between line for joining them
         )
 
-        top_threshold_y = size[0] - int(size[0] * 0.95)
-        bottom_threshold_y = size[0] * 0.95
 
         # Iterate over points
         count = 0
@@ -164,8 +176,11 @@ class LineIdentification:
         return lines_list
 
     def extract_side_line(self, frame, gray, candidate_pixels):
+        global MAX_SIDELINE_PIXEL_GAP
+
         rows, cols = gray.shape
 
+        copied_frame = frame.copy()
         print("Candidate Pixel Radiate Search Starting")
         for c in range(cols):
             for r in range(rows):
@@ -216,6 +231,7 @@ class LineIdentification:
         print("Candidate Pixel Distance Search Starting")
         for c in range(cols):
             for r in range(rows):
+
                 if candidate_pixels[r, c] == 1:
 
                     right_pixel_count = 0
@@ -244,6 +260,47 @@ class LineIdentification:
                         x = c
                         y = r
                         cv2.circle(frame, (x, y), 0, (0, 0, 255), 1)
+        print("Candidate Pixel Distance Search Finished")
+
+        # Fill Gaps
+        for r in range(rows):
+            for c in range(cols):
+                if candidate_pixels[r, c] == 1:
+                    # Fill gaps to the left
+                    gap_size = 0
+                    for left in range(c - 1, -1, -1):
+                        if candidate_pixels[r, left] == 0:
+                            gap_size += 1
+                        else:
+                            break
+
+                    if MAX_SIDELINE_PIXEL_GAP >= gap_size > 0:
+                        for left in range(c - 1, c - gap_size - 1, -1):
+                            candidate_pixels[r, left] = 1
+                            x = left
+                            y = r
+                            # cv2.circle(frame, (x, y), 0, (0, 0, 255), 1)
+
+                    gap_size = 0
+                    for right in range(c + 1, rows):
+                        if candidate_pixels[r, right] == 0:
+                            gap_size += 1
+                        else:
+                            break
+
+                    if MAX_SIDELINE_PIXEL_GAP >= gap_size > 0:
+                        for right in range(c + 1, c + gap_size + 1):
+                            candidate_pixels[r, right] = 1
+                            x = right
+                            y = r
+                            # cv2.circle(frame, (x, y), 0, (0, 0, 255), 1)
+
+
+        # lines = self.extract_all_lines(copied_frame, 50, 50, 100)
+        # self.draw_line(lines, copied_frame)
+        # cv2.imshow("Sidelines only", copied_frame)
+        # cv2.waitKey()
+        # cv2.destroyAllWindows()
 
 
     def color_pixels(self, gray, copied_img, candidate_pixels, r, c):
@@ -272,17 +329,21 @@ class LineIdentification:
         self.color_pixels(gray, copied_img, candidate_pixels, r + 1, c - 1)
 
     def calibrate_camera(self, frame, gray, line_list, sideline_pixels):
+        global CALIBRATION_IMAGE_COUNTER
+        global MAX_CALIBRATION_IMAGES
+        global CALIBRATION_MATRIX
 
         if line_list is not None and sideline_pixels is not None:
 
             rows, cols = gray.shape
-            if self.CALIBRATION_MATRIX is None:
+            if CALIBRATION_MATRIX is None:
                 dtype = [('y', 'int32'), ('x', 'int32')]
-                self.CALIBRATION_MATRIX = np.zeros(gray.shape, dtype)
+                CALIBRATION_MATRIX = np.zeros(gray.shape, dtype)
 
             top_sideline, bottom_sideline = self.find_top_bottom_sideline(line_list, rows, cols)
 
             if top_sideline != (None, None) and bottom_sideline != (None, None):
+                print("Using image for additional calibration tuning")
                 self.extend_lines_to_edge(top_sideline, cols)
                 self.extend_lines_to_edge(bottom_sideline, cols)
 
@@ -291,7 +352,7 @@ class LineIdentification:
 
                 self.draw_line([top_sideline[0], bottom_sideline[0]], gray)
 
-                self.CALIBRATION_IMAGE_COUNTER += 1
+                CALIBRATION_IMAGE_COUNTER += 1
 
         return self.calibrate_using_matrix(frame, gray)
 
@@ -351,13 +412,15 @@ class LineIdentification:
 
     def calibrate_using_matrix(self, frame, gray):
 
+        global CALIBRATION_MATRIX
+
         rows, cols = gray.shape
 
         temp_frame = frame.copy()
 
         for c in range(cols):
             for r in range(rows):
-                new_r, new_c = self.CALIBRATION_MATRIX[r, c]
+                new_r, new_c = CALIBRATION_MATRIX[r, c]
 
                 temp_frame[new_r, new_c] = frame[r, c]
 
@@ -402,6 +465,7 @@ class LineIdentification:
 
 
     def calibrate_pixels(self, sideline, sideline_pixels, gray, start_from_top):
+        global CALIBRATION_MATRIX
 
         rows, cols = sideline_pixels.shape
         # Iterate left to right across all columns
@@ -428,13 +492,13 @@ class LineIdentification:
 
             if y_top_edge is None and y_bottom_edge is None and c > 0:
                 # There was no sideline pixels found for this column
-                for pixel_y in range(start, end):
-                    if self.CALIBRATION_MATRIX[pixel_y, c][0] == 0 and self.CALIBRATION_MATRIX[pixel_y, c][1] == 0:
-                        self.CALIBRATION_MATRIX[pixel_y, c] = self.CALIBRATION_MATRIX[pixel_y, c - 1]
-                    else:
-                        new_location_y = int(round(statistics.mean([self.CALIBRATION_MATRIX[pixel_y, c - 1][0], self.CALIBRATION_MATRIX[pixel_y, c][0]])))
-                        new_location_x = int(round(statistics.mean([self.CALIBRATION_MATRIX[pixel_y, c - 1][1], self.CALIBRATION_MATRIX[pixel_y, c][1]])))
-                        self.CALIBRATION_MATRIX[pixel_y, c] = (new_location_y, new_location_x)
+                # for pixel_y in range(start, end):
+                #     if CALIBRATION_MATRIX[pixel_y, c][0] == 0 and CALIBRATION_MATRIX[pixel_y, c][1] == 0:
+                #         CALIBRATION_MATRIX[pixel_y, c][0] = CALIBRATION_MATRIX[pixel_y, c - 1][0]
+                #     else:
+                #         new_location_y = int(round(statistics.mean([CALIBRATION_MATRIX[pixel_y, c - 1][0], CALIBRATION_MATRIX[pixel_y, c][0]])))
+                #         new_location_x = int(round(statistics.mean([CALIBRATION_MATRIX[pixel_y, c - 1][1], CALIBRATION_MATRIX[pixel_y, c][1]])))
+                #         CALIBRATION_MATRIX[pixel_y, c] = (new_location_y, c)
                 continue
 
             if y_top_edge is not None:
@@ -483,12 +547,12 @@ class LineIdentification:
 
                 if 0 <= new_location_y < rows and new_location_y != pixel_y:
                     gray[new_location_y, c] = gray[pixel_y, c]
-                    if self.CALIBRATION_MATRIX[pixel_y, c][0] == 0 and self.CALIBRATION_MATRIX[pixel_y, c][1] == 0:
-                        self.CALIBRATION_MATRIX[pixel_y, c] = (new_location_y, new_location_x)
+                    if CALIBRATION_MATRIX[pixel_y, c][0] == 0 and CALIBRATION_MATRIX[pixel_y, c][1] == 0:
+                        CALIBRATION_MATRIX[pixel_y, c] = (new_location_y, c)
                     else:
-                        new_location_y = int(round(statistics.mean([new_location_y, self.CALIBRATION_MATRIX[pixel_y, c][0]])))
-                        new_location_x = int(round(statistics.mean([new_location_x, self.CALIBRATION_MATRIX[pixel_y, c][1]])))
-                        self.CALIBRATION_MATRIX[pixel_y, c] = (new_location_y, new_location_x)
+                        new_location_y = int(round(statistics.mean([new_location_y, CALIBRATION_MATRIX[pixel_y, c][0]])))
+                        new_location_x = int(round(statistics.mean([new_location_x, CALIBRATION_MATRIX[pixel_y, c][1]])))
+                        CALIBRATION_MATRIX[pixel_y, c] = (new_location_y, c)
 
 
 

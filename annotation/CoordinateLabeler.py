@@ -3,6 +3,7 @@ import cv2
 import os
 import sys
 from core.LineIdentification import LineIdentification
+import core.CameraCalibration as CameraCalibration
 
 base_dir = os.path.join(os.getcwd(), "data", "field")
 train_labels = []
@@ -35,7 +36,8 @@ def annotate(file, image):
     img = cv2.imread(os.path.join(base_dir, "train", "images", image))
 
     line_identifier = LineIdentification()
-    line_identifier.edge_detection(img, threshold=150, minLineLength=50, maxLineGap=100)
+    # line_identifier.edge_detection(img, threshold=150, minLineLength=50, maxLineGap=100)
+    CameraCalibration.convert_grayscale(img)
 
     with open(os.path.join(base_dir, "train", "labels", file), "r") as f:
         for line in f:

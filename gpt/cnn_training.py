@@ -39,11 +39,12 @@ YOLO_CLASSES = [
 # SEGMENTATION DATASET
 # -----------------------
 class FootballSegDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, img_size=640):
+    def __init__(self, image_dir, mask_dir, img_height=720, img_width=1280):
         self.image_paths = sorted(glob.glob(os.path.join(image_dir, "*.jpg")) +
                                   glob.glob(os.path.join(image_dir, "*.png")))
         self.mask_paths = sorted(glob.glob(os.path.join(mask_dir, "*.png")))
-        self.img_size = img_size
+        self.img_height = img_height
+        self.img_width = img_width
 
         assert len(self.image_paths) == len(self.mask_paths), \
             f"Number of images ({len(self.image_paths)}) and masks ({len(self.mask_paths)}) must match!"
@@ -51,39 +52,37 @@ class FootballSegDataset(Dataset):
         # Image transforms
         self.img_transform = T.Compose([
             T.ToPILImage(),
-            T.Resize((img_size, img_size), interpolation=InterpolationMode.BILINEAR),
+            T.Resize((img_height, img_width), interpolation=InterpolationMode.BILINEAR),
             T.ToTensor(),
             T.Normalize(mean=[0.485, 0.456, 0.406],
                         std=[0.229, 0.224, 0.225])
         ])
 
-        # Mask transform
-        self.mask_resize = T.Resize((img_size, img_size), interpolation=InterpolationMode.NEAREST)
+        # Mask resize only (nearest neighbor to preserve labels)
+        self.mask_resize = T.Resize((img_height, img_width), interpolation=InterpolationMode.NEAREST)
 
     def __len__(self):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        # Load image
         img = cv2.imread(self.image_paths[idx])
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        # Load mask (grayscale)
         mask = cv2.imread(self.mask_paths[idx], cv2.IMREAD_GRAYSCALE)
 
         # Apply transforms
-        img = self.img_transform(img)  # [3, H, W]
-
+        img = self.img_transform(img)
         mask = T.ToPILImage()(mask)
         mask = self.mask_resize(mask)
-        mask = T.ToTensor()(mask).squeeze(0).long()  # [H, W], int64
+        mask = T.ToTensor()(mask).squeeze(0).long()
 
         return img, mask
+
 
 # Dataset & Loader
 train_dataset = FootballSegDataset(os.path.join(DATA_DIR, "images/train"),
                                    os.path.join(DATA_DIR, "masks/train"),
-                                   IMG_SIZE)
+                                   IMG_H, IMG_W)
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
 # Model (DeepLabV3)

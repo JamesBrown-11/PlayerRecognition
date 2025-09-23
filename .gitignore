@@ -167,3 +167,5 @@ data/valid/labels.cache
 data/valid/labels/images00061_png.rf.f06a7f9aad3d966e2b2531da5b7351e9.txt
 /data/field
 /gpt/football_dataset
+gpt/segmentation_multiclass.pth
+gpt/yolov8n.pt
